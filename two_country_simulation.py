@@ -14,6 +14,36 @@ L = np.ones(N)
 a = np.random.rand(N,N,N) + 1
 g = np.random.rand(N,N,N) + 1
 
+
+#%% Set a class for a mode
+class WWModel:
+
+    def __init__(self, 
+                # Parameters and Settings
+                theta = 4.5,  # Trade elasticity
+                rho   = 0.55, # Multinationals elasticity                
+                N,   # Number of countries
+                
+                # Deep parameters
+                tau = np.nan, # Technology parameter
+                L   = np.nan, # Labor endowment
+                a   = np.nan, # Emission intensity
+                g   = np.nan  # Trade emission intensity
+
+                # Equilibrium outcome
+                Xm  = np.nan  # Total expenditure of country m
+                X   = np.nan  # Allocation 
+                w   = np.nan  # Wage
+                Z   = np.nan  # Emission from production
+                E   = np.nan  # Emission from trade
+                ):
+                self.theta = theta, self.rho = rho, self.N = N
+                self.tau = tau, self.L = L, self.a = a, self.g = g
+                self.Xm = Xm, self.X = X, self.w = w
+                       )
+    def solve(self):
+
+
 #%% Solve an equilibrium
 
 # Set initial wage
