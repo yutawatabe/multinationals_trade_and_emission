@@ -1,11 +1,11 @@
-# This script simulates model by Wanner and Watabe (2021)
+# This module contains a class 
 import numpy as np
 import copy
 import matplotlib.pyplot as plt
 import seaborn as sns
 
 #%% Set a class for a WW model
-class WWModel:
+class WWModel_single_industry:
 
     def __init__(self, 
                 N,   # Number of countries
@@ -42,6 +42,7 @@ class WWModel:
 
 
     def calcpi(self,p):
+        # This function calculate share from p
         N = self.N
         # Set tentative value
         Pim = np.zeros((N,N))
@@ -50,7 +51,10 @@ class WWModel:
 
         # Calculate price index and market share
         for HQ,PR,DE in np.ndindex((N,N,N)):
-            Pim[HQ,DE] += p[HQ,PR,DE] ** (-self.theta/(1-self.rho))
+            if np.isnan(p[HQ,PR,DE]):
+                Pim[HQ,DE] += 0
+            else:
+                Pim[HQ,DE] += p[HQ,PR,DE] ** (-self.theta/(1-self.rho))
         Pim = Pim ** (-(1-self.rho)/self.theta)
         for HQ,DE in np.ndindex((N,N)):
             Pm[DE] += Pim[HQ,DE] ** (-self.theta)
@@ -58,46 +62,53 @@ class WWModel:
 
         # Calculate expenditure share
         for HQ,PR,DE in np.ndindex((N,N,N)):
-            pi[HQ,PR,DE] = (p[HQ,PR,DE] ** (-self.theta/(1-self.rho)) / (Pim[HQ,DE] ** (-self.theta/(1-self.rho)))
-                          * Pim[HQ,DE] ** (-self.theta) / Pm[DE] ** (-self.theta)
-                        )
+            if np.isnan(p[HQ,PR,DE]):
+                pi[HQ,PR,DE] = 0
+            else:
+                pi[HQ,PR,DE] = (p[HQ,PR,DE] ** (-self.theta/(1-self.rho)) / (Pim[HQ,DE] ** (-self.theta/(1-self.rho)))
+                              * Pim[HQ,DE] ** (-self.theta) / Pm[DE] ** (-self.theta)
+                                )
         return pi,Pim,Pm
 
-
     def solve(self):
+        print("Start solving the model")
         # Solve the model from the parameter
         N = self.N
         # Set initial variable
         dif = 10
         w = np.ones(N)
 
-        # Start solving 
+        print("Searching over wages")
         while dif > 0.000001:
             # Set tentative value
             w_old = copy.deepcopy(w)
-            p = np.zeros((N,N,N))
+            p = np.empty((N,N,N))
             X  = np.zeros((N,N,N))
             Z  = np.zeros((N,N,N))
             E  = np.zeros((N,N,N))
-            Xm = w * L
+            Xm = w * self.L
     
             # Calculate price index and allocation
             for HQ,PR,DE in np.ndindex((N,N,N)):
-                p[HQ,PR,DE] = w[PR] * self.tau[HQ,PR,DE]
+                if np.isnan(self.tau[HQ,PR,DE]):
+                    p[HQ,PR,DE] = np.nan
+                else:
+                    p[HQ,PR,DE] = w[PR] * self.tau[HQ,PR,DE]
             pi,_,Pm = self.calcpi(p)
             for HQ,PR,DE in np.ndindex((N,N,N)):
                 X[HQ,PR,DE] = pi[HQ,PR,DE] * Xm[DE]
 
             # Check market clearing
-            w = np.sum(X,axis=(0,2)) / L
+            w = np.sum(X,axis=(0,2)) / self.L
             w = w/10 + w_old * 9/10
             w = w/w[0]
             dif = max(abs(w - w_old))
+        print("Done searching over wages")
 
         # Calculate emission
         for HQ,PR,DE in np.ndindex((N,N,N)):
-            Z[HQ,PR,DE] = a[HQ,PR,DE] * X[HQ,PR,DE] / (w[PR] * self.tau[HQ,PR,DE])
-            E[HQ,PR,DE] = g[HQ,PR,DE] * X[HQ,PR,DE] / (w[PR] * self.tau[HQ,PR,DE])
+            Z[HQ,PR,DE] = self.a[HQ,PR,DE] * X[HQ,PR,DE] / (w[PR] * self.tau[HQ,PR,DE])
+            E[HQ,PR,DE] = self.g[HQ,PR,DE] * X[HQ,PR,DE] / (w[PR] * self.tau[HQ,PR,DE])
         
         # Calculate utility
         ugoods = w / Pm
@@ -105,6 +116,7 @@ class WWModel:
         u = ugoods * uemission
 
         # Put eqm outcomes to the class
+        print("Done solving eqm")
         self.u = u
         self.ugoods = ugoods
         self.uemission = uemission
@@ -231,13 +243,27 @@ class WWModel:
         Z1_rs = self.Z
         w1_rs = self.w
 
-        # Compare
-        X_compare = X1_rs / X1_ha
-        Z_compare = Z1_rs / Z1_ha
+        # Compare the outcome for resolving and exact hat-algebra
+        X_compare = np.empty((N,N,N))
+        Z_compare = np.empty((N,N,N))
         w_compare = w1_rs / w1_ha
-        print(X_compare)
-        print(Z_compare)
-        print(w_compare)
+        for HQ,PR,DE in np.ndindex((N,N,N)):
+            if X0[HQ,PR,DE] ==0:
+                X_compare[HQ,PR,DE] = 1
+                Z_compare[HQ,PR,DE] = 1
+            else:
+                X_compare[HQ,PR,DE] = X1_rs[HQ,PR,DE] / X1_ha[HQ,PR,DE]
+                Z_compare[HQ,PR,DE] = Z1_rs[HQ,PR,DE] / Z1_ha[HQ,PR,DE]
+        print("Maximum difference (ratio) for the allocation is ")
+        print(np.max(X_compare))
+        print(np.min(X_compare))
+        print("Maximum difference (ratio) for the production emission is ")
+        print(np.max(Z_compare))
+        print(np.min(Z_compare))        
+        print("Maximum difference (ratio) for the wage is ")
+        print(np.max(w_compare))
+        print(np.min(w_compare))     
+    
 
     def inverse_solve(self):
         # This method back out the parameter from the observables
@@ -261,7 +287,11 @@ class WWModel:
 
             # Update p
             p_old = copy.deepcopy(p)
-            p = p * (X_model / self.X)/10 + p_old * 9/10
+            for HQ,PR,DE in np.ndindex((N,N,N)):
+                if self.X[HQ,PR,DE] == 0:
+                    p[HQ,PR,DE] = np.nan
+                else:
+                    p[HQ,PR,DE] = p[HQ,PR,DE] * (X_model[HQ,PR,DE] / self.X[HQ,PR,DE])/10 + p_old[HQ,PR,DE] * 9/10
             p = p / p[0,0,0]
             dif = np.max(abs(X_model - self.X))     
 
@@ -286,43 +316,38 @@ class WWModel:
 
 #%% Testing the class
 
-# Set parameters
-theta = 4.5
-rho = 0.55
+if __name__ == '__main__' :
+    print("If run as main, this class gives 2 symmetric country sample")
+    # Set parameters
+    theta = 4.5
+    rho = 0.55
+    
+    # There are two countries North and South
+    N = 2 
+    # Set tau (but normalize things so that domestic tau will be tau)
+    tau = np.ones((N,N,N))
+    tau[0,1,0] = np.nan
+    L = np.ones(N)
+    a = np.ones((N,N,N))
+    g = np.ones((N,N,N))
 
-# There are two countries North and South
-N = 2 
-# Set tau (but normalize things so that domestic tau will be tau)
-tau = (np.random.rand(N,N,N) + 5) / 5
-for DE in range(N):
-    tau[:,:,DE] = tau[:,:,DE] / tau[DE,DE,DE] 
-tau = np.ones((N,N,N))
-L = np.random.rand(N) + 1
-a = np.random.rand(N,N,N) + 1
-g = np.random.rand(N,N,N) + 1
-tauhat = np.ones((N,N,N))
-for HQ,PR,DE in np.ndindex((N,N,N)):
-    if HQ != PR:
-        tauhat[HQ,PR,DE] = 1.10
+    print("Set up a two country example and solve it")
+    sample_model = WWModel_single_industry(N=2,tau=tau,L=L,a=a,g=g) 
+    sample_model.solve()
+    print(sample_model.X)
 
+    print("Simulate 50 percent increase in the investment cost")
+    tauhat = np.ones((N,N,N))
+    for HQ,PR,DE in np.ndindex((N,N,N)):
+        if HQ != PR:
+            tauhat[HQ,PR,DE] = 1.5
 
-# We are able to recover the deep parameter from the eqm outcome 
-# (but we need some explicit normalization)
-testmodel = WWModel(N=2,tau=tau,L=L,a=a,g=g)
-testmodel.solve()
-testmodel.inverse_solve()
-# We probably want to know what happens if RRC assumptions is made.
-# Also we want to solve the hat-algebra
+    print("Recover the deep parameter from the eqm outcome")
+    # (but we need some explicit normalization)
+    # We probably want to know what happens if RRC assumptions is made.
+    print(sample_model.tau)
+    sample_model.inverse_solve()
+    print(sample_model.tau)
 
-# Construct tauhat and calculate exact hat-algebra
-hat_result = testmodel.exacthatalgebra(tauhat)
-# Cmpare the exact hat-algebra and re-solving the model
-# That is done. Good.
-testmodel.verify_exacthatalgebra(tauhat)
-print("end")
-
-#%% Simulating scenario
-# 0. North and South
-# 1. HFDI or VFDI 
-# 2. trade liberalization / investment liberalization
-# 3. Potential decomposition
+    print("Compare the exact hat-algebra and re-solving the model")
+    sample_model.verify_exacthatalgebra(tauhat)
