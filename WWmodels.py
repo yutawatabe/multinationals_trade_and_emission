@@ -5,7 +5,17 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 #%% Set a class for a WW model
-class WWModel_single_industry:
+class Model_single_industry:
+    """
+    This class in a model in Wanner and Watabe (2021)
+    where there is only a single indutry. Inputs are provided bin __init__ method.
+    This class allows to 
+        1. Solve a model and calculate equilibrium outcome (.solve)
+        2. Back out deep parameters of the model from the equilibrium outcome (.inverse_solve)
+        3. Calculate exact hat-algebra (.exacthatalgebra(tauhat))
+    To check if the exact hat-algebra is valid, the verify command check if the 
+    outcome of equilibrium recalculation coincides with that of exact hat-algebra.
+    """
 
     def __init__(self, 
                 N,   # Number of countries
@@ -42,7 +52,10 @@ class WWModel_single_industry:
 
 
     def calcpi(self,p):
-        # This function calculate share from p
+        """ 
+        This function calculate expenditure share from the price vector
+        and the elasticity parameter theta and rho (which contained in the object)
+        """
         N = self.N
         # Set tentative value
         Pim = np.zeros((N,N))
@@ -71,6 +84,12 @@ class WWModel_single_industry:
         return pi,Pim,Pm
 
     def solve(self):
+        """ 
+        This function solves the equilibirum outcome (w,P,X,Z,E,u)
+        from the paramters (tau,L,a,g) and the elasticity parameter theta and rho (which contained in the object).
+        To solve the market clearing, this runs the fixed point iteration. Change the dumping parameter if there
+        is some problem.
+        """
         print("Start solving the model")
         # Solve the model from the parameter
         N = self.N
@@ -109,7 +128,9 @@ class WWModel_single_industry:
         for HQ,PR,DE in np.ndindex((N,N,N)):
             Z[HQ,PR,DE] = self.a[HQ,PR,DE] * X[HQ,PR,DE] / (w[PR] * self.tau[HQ,PR,DE])
             E[HQ,PR,DE] = self.g[HQ,PR,DE] * X[HQ,PR,DE] / (w[PR] * self.tau[HQ,PR,DE])
-        
+        Z = np.nan_to_num(Z)
+        E = np.nan_to_num(E)
+
         # Calculate utility
         ugoods = w / Pm
         uemission = 1 + (1/(np.sum(Z) + np.sum(E))**2)
@@ -129,8 +150,11 @@ class WWModel_single_industry:
     
 
     def exacthatalgebra(self,tauhat):
-        # This method calculates exact hat-algebra 
-        # given tauhat (change in tau) in terms of ratio
+        """ 
+        This function solves the equilibirum outcome in chnages
+        from the eqm outcomes (X,Z,E) and the elasticity parameter theta and rho (which contained in the object).
+        This function will return the alternative equilibrium outcome. This does not store any new variable in the class.
+        """
         N = self.N
         
         # Setting boxes
@@ -222,17 +246,18 @@ class WWModel_single_industry:
         return what/Pmhat,what,Pmhat,phat,pihat,X1,Z1,E1
 
     def verify_exacthatalgebra(self,tauhat):
-        # This method checks if the result of exact hat-algebra
-        # matches the outcome that resolves the eqm
-        # We need deep parameter (although we can back it out from eqm out)
+        """
+        This method checks if the result of exact hat-algebra
+        matches the outcome that resolves the equilibrium.
+        We need structural parameters to calculate this.
+        """
         self.solve()
         tau0 = self.tau
         X0 = self.X
-        Z0 = self.Z
         w0 = self.w
         
         # First solve using exact hat-algebra
-        _,what,_,_,_,X1_ha,Z1_ha,E1_ha = self.exacthatalgebra(tauhat)
+        _,what,_,_,_,X1_ha,Z1_ha,_ = self.exacthatalgebra(tauhat)
         w1_ha = what * w0
 
         # Resolve the eqm with new tau
@@ -266,9 +291,11 @@ class WWModel_single_industry:
     
 
     def inverse_solve(self):
-        # This method back out the parameter from the observables
-        # Maybe we don't need this because we only look at exact hat-algebra
-        # but we will see...
+        """
+        This method backs out structural parameters from the equilibrium outcome.
+        We do need to know the deep parameters theta and rho.
+        We need some explicit normalization on tau (in most general tau structure).
+        """
         N = self.N
 
         # I think we need to know w
@@ -332,7 +359,7 @@ if __name__ == '__main__' :
     g = np.ones((N,N,N))
 
     print("Set up a two country example and solve it")
-    sample_model = WWModel_single_industry(N=2,tau=tau,L=L,a=a,g=g) 
+    sample_model = Model_single_industry(N=2,tau=tau,L=L,a=a,g=g) 
     sample_model.solve()
     print(sample_model.X)
 
@@ -343,8 +370,6 @@ if __name__ == '__main__' :
             tauhat[HQ,PR,DE] = 1.5
 
     print("Recover the deep parameter from the eqm outcome")
-    # (but we need some explicit normalization)
-    # We probably want to know what happens if RRC assumptions is made.
     print(sample_model.tau)
     sample_model.inverse_solve()
     print(sample_model.tau)
