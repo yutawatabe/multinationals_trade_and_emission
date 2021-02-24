@@ -21,34 +21,36 @@ class Model_single_industry:
                 N,   # Number of countries
                 # Parameters and Settings
                 theta = 4.5,  # Trade elasticity
-                rho   = 0, # Multinationals elasticity                
+                rho   = 0.55, # Multinationals elasticity                
                 
                 # Deep parameters
-                tau = np.nan, # Technology parameter
-                L   = np.nan, # Labor endowment
-                a   = np.nan, # Emission intensity
-                g   = np.nan, # Trade emission intensity
+                tau = None, # Technology parameter
+                L   = None, # Labor endowment
+                a   = None, # Emission intensity
+                g   = None, # Trade emission intensity
 
                 # Equilibrium outcome
-                Xm  = np.nan,  # Total expenditure of country m
-                X   = np.nan,  # Allocation 
-                w   = np.nan,  # Wage
-                Z   = np.nan,  # Emission from production
-                E   = np.nan,  # Emission from trade
+                Xm  = None, # Total expenditure of country m
+                X   = None, # Allocation 
+                w   = None, # Wage
+                Z   = None, # Emission from production
+                E   = None, # Emission from trade
                 ):
                 self.theta, self.rho, self.N, = theta, rho, N
                 self.tau, self.L, self.a, self.g = tau, L, a, g
                 self.Xm, self.X, self.w = Xm, X, w
+                self.Z,self.E = Z,E
 
                 # Fill in pi (trade share)
-                if not np.isnan(X):
+                if X is None:
+                    pi = np.nan
+                else:
+                    Xm = np.sum(X,axis=(0,1))
                     pi = np.zeros((N,N,N))
                     for HQ,PR,DE in np.ndindex((N,N,N)):
-                        print(pi)
                         pi[HQ,PR,DE] = X[HQ,PR,DE] / Xm[DE]
-                else:
-                    pi = np.nan
-                self.pi = pi
+                    self.pi = pi
+                    self.Xm = Xm
 
 
     def calcpi(self,p):
@@ -231,18 +233,17 @@ class Model_single_industry:
                 Ym1[PR] += self.pi[HQ,PR,DE] * pihat[HQ,PR,DE] * Xm1[DE]
                 X1[HQ,PR,DE] = self.pi[HQ,PR,DE] * pihat[HQ,PR,DE] * Xm1[DE] 
             what = Ym1 / Ym
-            what = what * 1/8 + whatold * 7/8
+            what = what * 1/10 + whatold * 9/10
             what = what / what[0]
             dif = max(abs(whatold - what))
-    
+            #print(dif) 
+
         # Update emission
         Z1 = np.zeros((N,N,N))
         E1 = np.zeros((N,N,N))
         for HQ,PR,DE in np.ndindex((N,N,N)):
             Z1[HQ,PR,DE] = self.Z[HQ,PR,DE] * (pihat[HQ,PR,DE] * Xm1[DE]) / (phat[HQ,PR,DE] * self.Xm[DE])
             E1[HQ,PR,DE] = self.E[HQ,PR,DE] * (pihat[HQ,PR,DE] * Xm1[DE]) / (phat[HQ,PR,DE] * self.Xm[DE])
-        
-        #return wage_hat
         return what/Pmhat,what,Pmhat,phat,pihat,X1,Z1,E1
 
     def verify_exacthatalgebra(self,tauhat):
@@ -300,6 +301,7 @@ class Model_single_industry:
 
         # I think we need to know w
         w = self.w
+        L = self.Xm / w
 
         # Start backing up price (with some normalization)
         p = np.ones((N,N,N))
@@ -330,6 +332,8 @@ class Model_single_industry:
 
         # Calculate tau, a and g
         tau = np.zeros((N,N,N))
+        a   = np.zeros((N,N,N))
+        g   = np.zeros((N,N,N))
         for HQ,PR,DE in np.ndindex((N,N,N)):
             tau[HQ,PR,DE] = p[HQ,PR,DE] / w[PR]
             a[HQ,PR,DE] = self.Z[HQ,PR,DE] * p[HQ,PR,DE] / self.X[HQ,PR,DE]
@@ -352,22 +356,22 @@ if __name__ == '__main__' :
     # There are two countries North and South
     N = 2 
     # Set tau (but normalize things so that domestic tau will be tau)
-    tau = np.ones((N,N,N))
-    tau[0,1,0] = np.nan
-    L = np.ones(N)
-    a = np.ones((N,N,N))
-    g = np.ones((N,N,N))
+    tau0 = np.ones((N,N,N))
+    tau0[0,1,0] = np.nan
+    L0 = [1,2]
+    a0 = np.ones((N,N,N))
+    g0 = np.ones((N,N,N))
 
     print("Set up a two country example and solve it")
-    sample_model = Model_single_industry(N=2,tau=tau,L=L,a=a,g=g) 
+    sample_model = Model_single_industry(N=2,tau=tau0,L=L0,a=a0,g=g0) 
     sample_model.solve()
     print(sample_model.X)
 
-    print("Simulate 50 percent increase in the investment cost")
-    tauhat = np.ones((N,N,N))
-    for HQ,PR,DE in np.ndindex((N,N,N)):
-        if HQ != PR:
-            tauhat[HQ,PR,DE] = 1.5
+    print("Randomly changing the tau")
+    tauhat0 = np.random.rand(N,N,N) + np.ones((N,N,N)) / 2
+    #for HQ,PR,DE in np.ndindex((N,N,N)):
+    #    if HQ != PR:
+    #        tauhat0[HQ,PR,DE] = 1.5
 
     print("Recover the deep parameter from the eqm outcome")
     print(sample_model.tau)
@@ -375,4 +379,4 @@ if __name__ == '__main__' :
     print(sample_model.tau)
 
     print("Compare the exact hat-algebra and re-solving the model")
-    sample_model.verify_exacthatalgebra(tauhat)
+    sample_model.verify_exacthatalgebra(tauhat0)
