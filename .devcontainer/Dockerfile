@@ -13,7 +13,7 @@ RUN if ! cat /etc/group | grep -e "^pip-global:" > /dev/null 2>&1; then groupadd
     && ( [ ! -f "/etc/profile.d/00-restore-env.sh" ] || sed -i -e "s/export PATH=/export PATH=\/usr\/local\/pip-global:/" /etc/profile.d/00-restore-env.sh )
 
 # Start poetry
-COPY pyproject.toml ./
+COPY pyproject.toml poetry.lock ./
 RUN pip install poetry
 RUN poetry config virtualenvs.create false
 RUN poetry install

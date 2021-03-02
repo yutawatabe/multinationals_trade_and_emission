@@ -279,5 +279,5 @@ axs[1,0].set_xlabel("tau")
 axs[1,1].set_xlabel("tau")
 axs[0,1].set_title("VFDI")
 fig.savefig("./figures/trade_simulation_eha.png")
-
+print("Done with exact hat-algebra")
 

@@ -129,11 +129,11 @@ class Model_single_industry:
         # Calculate emission
         for HQ,PR,DE in np.ndindex((N,N,N)):
             # With scale effect 
-            #Z[HQ,PR,DE] = self.a[HQ,PR,DE] * X[HQ,PR,DE] / (w[PR] * self.tau[HQ,PR,DE])
-            #E[HQ,PR,DE] = self.g[HQ,PR,DE] * X[HQ,PR,DE] / (w[PR] * self.tau[HQ,PR,DE])
+            Z[HQ,PR,DE] = self.a[HQ,PR,DE] * X[HQ,PR,DE] / (w[PR] * self.tau[HQ,PR,DE])
+            E[HQ,PR,DE] = self.g[HQ,PR,DE] * X[HQ,PR,DE] / (w[PR] * self.tau[HQ,PR,DE])
             # Kill scale effect
-            Z[HQ,PR,DE] = self.a[HQ,PR,DE] * X[HQ,PR,DE] / w[PR] 
-            E[HQ,PR,DE] = self.g[HQ,PR,DE] * X[HQ,PR,DE] / w[PR]
+            #Z[HQ,PR,DE] = self.a[HQ,PR,DE] * X[HQ,PR,DE] / w[PR] 
+            #E[HQ,PR,DE] = self.g[HQ,PR,DE] * X[HQ,PR,DE] / w[PR]
         Z = np.nan_to_num(Z)
         E = np.nan_to_num(E)
 
@@ -247,11 +247,11 @@ class Model_single_industry:
         E1 = np.zeros((N,N,N))
         for HQ,PR,DE in np.ndindex((N,N,N)):
             # Including scale effect
-            #Z1[HQ,PR,DE] = self.Z[HQ,PR,DE] * (pihat[HQ,PR,DE] * Xm1[DE]) / (phat[HQ,PR,DE] * self.Xm[DE])
-            #E1[HQ,PR,DE] = self.E[HQ,PR,DE] * (pihat[HQ,PR,DE] * Xm1[DE]) / (phat[HQ,PR,DE] * self.Xm[DE])
+            Z1[HQ,PR,DE] = self.Z[HQ,PR,DE] * (pihat[HQ,PR,DE] * Xm1[DE]) / (phat[HQ,PR,DE] * self.Xm[DE])
+            E1[HQ,PR,DE] = self.E[HQ,PR,DE] * (pihat[HQ,PR,DE] * Xm1[DE]) / (phat[HQ,PR,DE] * self.Xm[DE])
             # Kill scale effect
-            Z1[HQ,PR,DE] = self.Z[HQ,PR,DE] * (pihat[HQ,PR,DE] * Xm1[DE]) / (what[PR] * self.Xm[DE])
-            E1[HQ,PR,DE] = self.E[HQ,PR,DE] * (pihat[HQ,PR,DE] * Xm1[DE]) / (what[PR] * self.Xm[DE])
+            #Z1[HQ,PR,DE] = self.Z[HQ,PR,DE] * (pihat[HQ,PR,DE] * Xm1[DE]) / (what[PR] * self.Xm[DE])
+            #E1[HQ,PR,DE] = self.E[HQ,PR,DE] * (pihat[HQ,PR,DE] * Xm1[DE]) / (what[PR] * self.Xm[DE])
         return what/Pmhat,what,Pmhat,phat,pihat,X1,Z1,E1
 
     def verify_exacthatalgebra(self,tauhat):

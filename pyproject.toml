@@ -10,9 +10,9 @@ pandas = "*"
 numpy = "*"
 matplotlib = "*"
 seaborn = "*"
-beautifulsoup4 = "*"
 requests = "*"
 ipython = "*"
+openpyxl ="*"
 
 [build-system]
 requires = ["poetry>=0.12"]
