@@ -85,14 +85,14 @@ def calc_aggregate(X,Z,E):
     return Zl,El,EX,IM,OI,II
 
 # Simulate the model from the parameters and give output which is aggregated
-def simulate_and_aggregate(N,theta,rho,tau_input,L,a,g):
-    model = WWmodels.Model_single_industry(N=N,theta=theta,rho=rho,tau=tau_input,L=L,a=a,g=g)
+def simulate_and_aggregate(N,theta,rho,tau_input,L,a,g,D):
+    model = WWmodels.Model_single_industry(N=N,theta=theta,rho=rho,tau=tau_input,L=L,a=a,g=g,D=D)
     model.solve()
     Zl,El,EX,IM,OI,II = calc_aggregate(model.X,model.Z,model.E)
     return np.concatenate([Zl,El,EX,IM,OI,II])
 
-def exacthatalgebra_and_aggregate(N,theta,rho,X,Z,E,tauhat_input):
-    model = WWmodels.Model_single_industry(N=N,theta=theta,rho=rho,X=X,Z=Z,E=E)
+def exacthatalgebra_and_aggregate(N,theta,rho,X,Z,E,D,tauhat_input):
+    model = WWmodels.Model_single_industry(N=N,theta=theta,rho=rho,X=X,Z=Z,E=E,D=D)
     _,_,_,_,_,X1,Z1,E1 = model.exacthatalgebra(tauhat_input)
     Zl,El,EX,IM,OI,II = calc_aggregate(X1,Z1,E1)
     return np.concatenate([Zl,El,EX,IM,OI,II])
@@ -115,6 +115,7 @@ g = np.ones((N,N,N))
 for HQ,PR,DE in np.ndindex((N,N,N)):
     if PR == DE:
         g[HQ,PR,DE] = 0 
+D = np.zeros((N))
 
 # Calculate the step
 HFDI_mplib,VFDI_mplib = np.empty((0,6*N)),np.empty((0,6*N))
@@ -125,14 +126,14 @@ for t in trange:
     ## Investment liberalization
     tau_HFDI,tau_VFDI = set_tau(t,"mp")
     # Solve HFDI for mplib
-    HFDI_mplib = np.vstack((HFDI_mplib,simulate_and_aggregate(N,theta,rho,tau_HFDI,L,a,g)))
-    VFDI_mplib = np.vstack((VFDI_mplib,simulate_and_aggregate(N,theta,rho,tau_VFDI,L,a,g)))
+    HFDI_mplib = np.vstack((HFDI_mplib,simulate_and_aggregate(N,theta,rho,tau_HFDI,L,a,g,D)))
+    VFDI_mplib = np.vstack((VFDI_mplib,simulate_and_aggregate(N,theta,rho,tau_VFDI,L,a,g,D)))
 
     ## Trade liberalization
     tau_HFDI,tau_VFDI = set_tau(t,"trade")
     # Solve HFDI for tradelib
-    HFDI_tradelib = np.vstack((HFDI_tradelib,simulate_and_aggregate(N,theta,rho,tau_HFDI,L,a,g)))
-    VFDI_tradelib = np.vstack((VFDI_tradelib,simulate_and_aggregate(N,theta,rho,tau_VFDI,L,a,g)))
+    HFDI_tradelib = np.vstack((HFDI_tradelib,simulate_and_aggregate(N,theta,rho,tau_HFDI,L,a,g,D)))
+    VFDI_tradelib = np.vstack((VFDI_tradelib,simulate_and_aggregate(N,theta,rho,tau_VFDI,L,a,g,D)))
 
 # Plot the figure for mp liberalization
 column_names = ["Z_North","Z_South","E_North","E_South",
@@ -233,11 +234,11 @@ HFDI_tradelib,VFDI_tradelib = np.empty((0,6*N)),np.empty((0,6*N))
 trange = np.arange(0.75,1.25,0.05)
 for t in trange:
     tauhat_HFDI,tauhat_VFDI = set_tauhat(t,"mp")
-    HFDI_mplib = np.vstack((HFDI_mplib,exacthatalgebra_and_aggregate(N,theta,rho,X_HFDI,Z_HFDI,E_HFDI,tauhat_HFDI)))
-    VFDI_mplib = np.vstack((VFDI_mplib,exacthatalgebra_and_aggregate(N,theta,rho,X_VFDI,Z_VFDI,E_VFDI,tauhat_VFDI)))
+    HFDI_mplib = np.vstack((HFDI_mplib,exacthatalgebra_and_aggregate(N,theta,rho,X_HFDI,Z_HFDI,E_HFDI,D,tauhat_HFDI)))
+    VFDI_mplib = np.vstack((VFDI_mplib,exacthatalgebra_and_aggregate(N,theta,rho,X_VFDI,Z_VFDI,E_VFDI,D,tauhat_VFDI)))
     tauhat_HFDI,tauhat_VFDI = set_tauhat(t,"trade")
-    HFDI_tradelib = np.vstack((HFDI_tradelib,exacthatalgebra_and_aggregate(N,theta,rho,X_HFDI,Z_HFDI,E_HFDI,tauhat_HFDI)))
-    VFDI_tradelib = np.vstack((VFDI_tradelib,exacthatalgebra_and_aggregate(N,theta,rho,X_VFDI,Z_VFDI,E_VFDI,tauhat_VFDI)))
+    HFDI_tradelib = np.vstack((HFDI_tradelib,exacthatalgebra_and_aggregate(N,theta,rho,X_HFDI,Z_HFDI,E_HFDI,D,tauhat_HFDI)))
+    VFDI_tradelib = np.vstack((VFDI_tradelib,exacthatalgebra_and_aggregate(N,theta,rho,X_VFDI,Z_VFDI,E_VFDI,D,tauhat_VFDI)))
 
 # Set column names for tha figure
 column_names = ["Z_North","Z_South","E_North","E_South",

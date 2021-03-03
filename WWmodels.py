@@ -28,6 +28,7 @@ class Model_single_industry:
                 L   = None, # Labor endowment
                 a   = None, # Emission intensity
                 g   = None, # Trade emission intensity
+                D   = None, # Trade deficit
 
                 # Equilibrium outcome
                 Xm  = None, # Total expenditure of country m
@@ -35,55 +36,40 @@ class Model_single_industry:
                 w   = None, # Wage
                 Z   = None, # Emission from production
                 E   = None, # Emission from trade
+
+                # Data (for Triangulation)
+                T  = None, # Trade data
+                M  = None, # Multinational production data
+                Zl = None, # Observed emission for each country of production
+
                 ):
                 self.theta, self.rho, self.N, = theta, rho, N
-                self.tau, self.L, self.a, self.g = tau, L, a, g
+                self.tau, self.L, self.a, self.g, self.D = tau, L, a, g, D
                 self.Xm, self.X, self.w = Xm, X, w
+                self.T,self.M,self.Zl = T, M, Zl
                 self.Z,self.E = Z,E
 
-                # Fill in pi (trade share)
-                if X is None:
-                    pi = np.nan
-                else:
-                    Xm = np.sum(X,axis=(0,1))
-                    pi = np.zeros((N,N,N))
-                    for HQ,PR,DE in np.ndindex((N,N,N)):
-                        pi[HQ,PR,DE] = X[HQ,PR,DE] / Xm[DE]
-                    self.pi = pi
-                    self.Xm = Xm
+                # Set data
+                if X is not None:
+                    # Calculate absorption, production and trade deficit
+                    self.Xm = np.sum(X,axis=(0,1))
+                    self.Ym = np.sum(X,axis=(0,2))
+                    self.D  = self.Xm - self.Ym  
+                elif T is not None:
+                    # Calculate absorption, production and trade deficit
+                    self.Xm = np.sum(T,axis=0)
+                    self.Ym = np.sum(T,axis=1)
+                    self.D  = self.Xm - self.Ym
 
+                    # Normalize M to fit with T
+                    # Adjust value in df_amne so that the total production in AMNE is equalized with 
+                    # total production in WIODs. The ordering of the axis is different so be aware.
+                    temp_M = copy.deepcopy(M)
+                    for HQ,PR in np.ndindex(N,N):
+                        temp_M[HQ,PR] = M[HQ,PR] * sum(T[PR,:]) / sum(M[:,PR])
+                    M = copy.deepcopy(temp_M)
+                    self.T, self.M = T, M
 
-    def calcpi(self,p):
-        """ 
-        This function calculate expenditure share from the price vector
-        and the elasticity parameter theta and rho (which contained in the object)
-        """
-        N = self.N
-        # Set tentative value
-        Pim = np.zeros((N,N))
-        Pm  = np.zeros(N)
-        pi  = np.zeros((N,N,N))
-
-        # Calculate price index and market share
-        for HQ,PR,DE in np.ndindex((N,N,N)):
-            if np.isnan(p[HQ,PR,DE]):
-                Pim[HQ,DE] += 0
-            else:
-                Pim[HQ,DE] += p[HQ,PR,DE] ** (-self.theta/(1-self.rho))
-        Pim = Pim ** (-(1-self.rho)/self.theta)
-        for HQ,DE in np.ndindex((N,N)):
-            Pm[DE] += Pim[HQ,DE] ** (-self.theta)
-        Pm  = Pm ** (-1/self.theta)
-
-        # Calculate expenditure share
-        for HQ,PR,DE in np.ndindex((N,N,N)):
-            if np.isnan(p[HQ,PR,DE]):
-                pi[HQ,PR,DE] = 0
-            else:
-                pi[HQ,PR,DE] = (p[HQ,PR,DE] ** (-self.theta/(1-self.rho)) / (Pim[HQ,DE] ** (-self.theta/(1-self.rho)))
-                              * Pim[HQ,DE] ** (-self.theta) / Pm[DE] ** (-self.theta)
-                                )
-        return pi,Pim,Pm
 
     def solve(self):
         """ 
@@ -107,7 +93,8 @@ class Model_single_industry:
             X  = np.zeros((N,N,N))
             Z  = np.zeros((N,N,N))
             E  = np.zeros((N,N,N))
-            Xm = w * self.L
+            Xm = w * self.L + self.D
+            Ym = w * self.L
     
             # Calculate price index and allocation
             for HQ,PR,DE in np.ndindex((N,N,N)):
@@ -138,7 +125,7 @@ class Model_single_industry:
         E = np.nan_to_num(E)
 
         # Calculate utility
-        ugoods = w / Pm
+        ugoods = Xm / Pm
         uemission = 1 + (1/(np.sum(Z) + np.sum(E))**2)
         u = ugoods * uemission
 
@@ -149,10 +136,10 @@ class Model_single_industry:
         self.uemission = uemission
         self.w = w
         self.X = X
-        self.pi = pi
         self.Z = Z
         self.E = E
         self.Xm = Xm
+        self.Ym = Ym
     
 
     def exacthatalgebra(self,tauhat):
@@ -166,17 +153,18 @@ class Model_single_industry:
         # Setting boxes
         veps = self.theta / (1 - self.rho)
         X1   = np.zeros((N,N,N))
-        Ym = np.sum(self.X,axis=(0,2))
-        #D    = X_m - Y_m
-    
+
         # Calculate pi, pic, Pi
+        pi = np.zeros((N,N,N))
+        for HQ,PR,DE in np.ndindex((N,N,N)):
+            pi[HQ,PR,DE] = self.X[HQ,PR,DE] / self.Xm[DE]
         pic = np.zeros((N,N,N))
-        Pi = np.sum(self.pi,1)
+        Pi = np.sum(pi,1)
         for HQ,PR,DE in np.ndindex((N,N,N)):
             if Pi[HQ,DE] == 0:
                 pic[HQ,PR,DE] = 0
             else:
-                pic[HQ,PR,DE] = self.pi[HQ,PR,DE] / Pi[HQ,DE]
+                pic[HQ,PR,DE] = pi[HQ,PR,DE] / Pi[HQ,DE]
 
         # Put an initial guess on what and phat
         whatold = np.ones(N) * 0.95
@@ -212,7 +200,7 @@ class Model_single_industry:
             Pmhat = Pmhat ** (-1/self.theta)
             # Calculate pihat and pi1
             for HQ,PR,DE in np.ndindex((N,N,N)):
-                if self.pi[HQ,PR,DE] == 0:
+                if pi[HQ,PR,DE] == 0:
                     pihat_num[HQ,PR,DE] = 0
                     pihat_den1[HQ,DE] += 0
                 else:
@@ -224,19 +212,19 @@ class Model_single_industry:
                 else:
                     pihat_den2[DE] += Pi[HQ,DE] * Pimhat[HQ,DE]**(-self.theta)
             for HQ,PR,DE in np.ndindex((N,N,N)):
-                if self.pi[HQ,PR,DE] == 0:
+                if pi[HQ,PR,DE] == 0:
                     pihat[HQ,PR,DE] == 0
                 else:
                     pihat[HQ,PR,DE] = pihat_num[HQ,PR,DE] / (pihat_den1[HQ,DE] * pihat_den2[DE])
 
             # Update income
-            Xm1 = Ym * what
+            Xm1 = self.Ym * what + self.D
             Ym1 = np.zeros((N))
             X1    = np.zeros((N,N,N))
             for HQ,PR,DE in np.ndindex((N,N,N)):
-                Ym1[PR] += self.pi[HQ,PR,DE] * pihat[HQ,PR,DE] * Xm1[DE]
-                X1[HQ,PR,DE] = self.pi[HQ,PR,DE] * pihat[HQ,PR,DE] * Xm1[DE] 
-            what = Ym1 / Ym
+                Ym1[PR] += pi[HQ,PR,DE] * pihat[HQ,PR,DE] * Xm1[DE]
+                X1[HQ,PR,DE] = pi[HQ,PR,DE] * pihat[HQ,PR,DE] * Xm1[DE] 
+            what = Ym1 / self.Ym
             what = what * 1/10 + whatold * 9/10
             what = what / what[0]
             dif = max(abs(whatold - what))
@@ -253,6 +241,84 @@ class Model_single_industry:
             #Z1[HQ,PR,DE] = self.Z[HQ,PR,DE] * (pihat[HQ,PR,DE] * Xm1[DE]) / (what[PR] * self.Xm[DE])
             #E1[HQ,PR,DE] = self.E[HQ,PR,DE] * (pihat[HQ,PR,DE] * Xm1[DE]) / (what[PR] * self.Xm[DE])
         return what/Pmhat,what,Pmhat,phat,pihat,X1,Z1,E1
+
+    # Fill allocation from the data
+    def fill_allocation(self,assumption):
+        """
+        This function fill in an allocation from the data.
+        There are PFDI, HFDI, VFDI, RRC as a choice.
+        """
+        N,T,M = self.N,self.T,self.M
+        X = np.zeros((N,N,N))
+        self.assumption = assumption
+        # Proportioanl export platform FDI
+        if assumption == "PFDI":
+            for HQ,PR,DE in np.ndindex(N,N,N):
+                if M[HQ,PR] > 0:
+                    X[HQ,PR,DE] = M[HQ,PR] / np.sum(M[:,PR]) * T[PR,DE]
+            print("Proportional Export Platfrom FDI exists and set")
+            self.X = X
+        # Pure horizontal FDI
+        elif assumption == "HFDI":
+            for HQ,PR,DE in np.ndindex(N,N,N):
+                if HQ == PR and PR == DE:
+                    X[DE,DE,DE] = M[DE,DE] - sum(T[DE,:]) + T[DE,DE]
+                elif PR == DE and HQ != DE:
+                    X[HQ,DE,DE] = M[HQ,DE]
+                elif HQ == PR and PR != DE:
+                    X[HQ,HQ,DE] = T[HQ,DE]
+                elif HQ == DE and PR != DE:
+                    X[DE,PR,DE] = 0
+            if np.any(X<0):
+                print("Pure Horizontal FDI rejected")
+            else:
+                print("Pure Horizontal FDI exists and set")
+                self.X = X
+        # Pure vertical FDI
+        elif assumption == "VFDI":
+            for HQ,PR,DE in np.ndindex(N,N,N):
+                if HQ == PR and PR == DE:
+                    X[DE,DE,DE] = T[DE,DE]
+                elif PR == DE and HQ != DE:
+                    X[HQ,DE,DE] = 0
+                elif HQ == PR and PR != DE:
+                    X[HQ,HQ,DE] = T[HQ,DE] - M[DE,HQ]     
+                elif HQ == DE and PR != DE:
+                    X[DE,PR,DE] = M[DE,PR]      
+            if np.any(X<0):
+                print("Pure Vertical FDI rejected")
+            else:
+                print("Pure Vertical FDI exists and set")
+                self.X = X
+        # Ramondo Rodriguez-Clare FDI
+        elif assumption == "RRC":
+            # Set default initial parameters
+            gamma,xi = np.ones((N,N)),np.ones((N,N))
+            count = 0
+            dif = 1
+            # Start searching over eqm gamma
+            while dif > 0.001:
+                count += 1
+                gamma_old,xi_old = copy.deepcopy(gamma),copy.deepcopy(xi)
+                p = np.zeros((N,N,N))
+                for HQ,PR,DE in np.ndindex((N,N,N)):
+                    p[HQ,PR,DE] = gamma[HQ,PR] * xi[PR,DE]
+                pi,_,_ = self.calcpi(p)
+                for HQ,PR,DE in np.ndindex((N,N,N)):
+                    X[HQ,PR,DE] = pi[HQ,PR,DE] * self.Xm[DE]
+                M_model = np.sum(X,axis=2)
+                T_model = np.sum(X,axis=0)
+                if count % 2 == 0:
+                    gamma = gamma * M_model / self.M * 1/10 + gamma_old * 9/10
+                else:
+                    xi    = xi * T_model / self.T * 1/10 + xi_old * 9/10
+                dif = max(np.max(abs(self.T-T_model)),np.max(abs(self.M-M_model)))
+                #print(dif)
+            print("Ramondo Rodriguez-ClareFDI exists and set")
+            self.X = X
+        else:
+            print("This assumption is not well defined")
+
 
     def verify_exacthatalgebra(self,tauhat):
         """
@@ -353,10 +419,45 @@ class Model_single_industry:
         self.a   = a # Emission intensity
         self.g   = g # Trade emission intensity
 
+    def calcpi(self,p):
+        """ 
+        This function calculate expenditure share from the price vector
+        and the elasticity parameter theta and rho (which contained in the object)
+        """
+        N = self.N
+        # Set tentative value
+        Pim = np.zeros((N,N))
+        Pm  = np.zeros(N)
+        pi  = np.zeros((N,N,N))
+
+        # Calculate price index and market share
+        for HQ,PR,DE in np.ndindex((N,N,N)):
+            if np.isnan(p[HQ,PR,DE]):
+                Pim[HQ,DE] += 0
+            else:
+                Pim[HQ,DE] += p[HQ,PR,DE] ** (-self.theta/(1-self.rho))
+        Pim = Pim ** (-(1-self.rho)/self.theta)
+        for HQ,DE in np.ndindex((N,N)):
+            Pm[DE] += Pim[HQ,DE] ** (-self.theta)
+        Pm  = Pm ** (-1/self.theta)
+
+        # Calculate expenditure share
+        for HQ,PR,DE in np.ndindex((N,N,N)):
+            if np.isnan(p[HQ,PR,DE]):
+                pi[HQ,PR,DE] = 0
+            else:
+                pi[HQ,PR,DE] = (p[HQ,PR,DE] ** (-self.theta/(1-self.rho)) / (Pim[HQ,DE] ** (-self.theta/(1-self.rho)))
+                              * Pim[HQ,DE] ** (-self.theta) / Pm[DE] ** (-self.theta)
+                                )
+        return pi,Pim,Pm
+
 #%% Testing the class
 
 if __name__ == '__main__' :
-    print("If run as main, this class gives 2 symmetric country sample")
+    print("""
+            If run as main, it tests various examples
+            print("First it solves two country equilibrium and exact hat-algebra
+        """)
     # Set parameters
     theta = 4.5
     rho = 0.55
@@ -369,22 +470,47 @@ if __name__ == '__main__' :
     L0 = [1,2]
     a0 = np.ones((N,N,N))
     g0 = np.ones((N,N,N))
+    D0 = np.zeros((N))
 
     print("Set up a two country example and solve it")
-    sample_model = Model_single_industry(N=2,tau=tau0,L=L0,a=a0,g=g0) 
+    sample_model = Model_single_industry(N=2,tau=tau0,L=L0,a=a0,g=g0,D=D0) 
     sample_model.solve()
     print(sample_model.X)
 
     print("Randomly changing the tau")
     tauhat0 = np.random.rand(N,N,N) + np.ones((N,N,N)) / 2
-    #for HQ,PR,DE in np.ndindex((N,N,N)):
-    #    if HQ != PR:
-    #        tauhat0[HQ,PR,DE] = 1.5
 
     print("Recover the deep parameter from the eqm outcome")
+    print("Compare them and show they are close (or same)")
     print(sample_model.tau)
     sample_model.inverse_solve()
     print(sample_model.tau)
 
     print("Compare the exact hat-algebra and re-solving the model")
     sample_model.verify_exacthatalgebra(tauhat0)
+
+    print("Second it triangulated three country example")
+    #%% Triangulation
+    # Simple sample case (where VFDI is a benchmark)
+    N = 3
+    X = np.zeros((N,N,N))
+    for HQ,PR,DE in np.ndindex((N,N,N)):
+        for HQ,PR,DE in np.ndindex(N,N,N):
+            if HQ == PR and PR == DE:
+                X[DE,DE,DE] = 3
+            elif PR == DE and HQ != DE:
+                X[HQ,DE,DE] = 0
+            elif HQ == PR and PR != DE:
+                X[HQ,HQ,DE] = 2     
+            elif HQ == DE and PR != DE:
+                X[DE,PR,DE] = 1            
+    T0,M0 = np.sum(X,axis=0),np.sum(X,axis=2)
+    Zl0    = np.random.rand((N))
+    model_triangulation = Model_single_industry(N=N,theta=4.5,rho=0.55,T=T0,M=M0,Zl=Zl0)
+    model_triangulation.fill_allocation("PFDI")
+    model_triangulation.fill_allocation("HFDI")
+    model_triangulation.fill_allocation("VFDI")
+
+
+
+
