@@ -1,0 +1,86 @@
+<document>
+<category></category>
+<solver></solver>
+<inputMethod>AMPL</inputMethod>
+<priority>long</priority>
+<email>yutawatabe.jobs@gmail.com</email>
+<model><![CDATA[
+
+set COU;
+set BILAT = COU cross COU;
+set TRILAT = COU cross COU cross COU;
+
+# Parameters
+param theta >= 0;
+param rho   >=0, <1;
+
+# Observed variables
+param mprod {BILAT} >=0;
+param trade {BILAT} >=0; 
+param X_m {DE in COU} = sum{PR in COU} trade[PR,DE];
+param Zl {BILAT} >=0;
+param E  {TRILAT} >=0;
+param w {COU} >=0;
+
+# Parameter to find
+var xi    {BILAT} >= 0, <=10;
+var gamma {BILAT} >= 0, <=10;
+
+# Describe a demand function
+var p {(HQ,PR,DE) in TRILAT} = gamma[HQ,PR] * xi[PR,DE] * w[DE]; 
+var P {(HQ,DE) in BILAT} = 
+    (
+     sum {K in COU} p[HQ,K,DE]^(1/(1-rho))
+    )^(1-rho);
+
+var X {(HQ,PR,DE) in TRILAT} = X_m[DE]
+    * (p[HQ,PR,DE] / P[HQ,DE])^(1/(1-rho))
+    * P[HQ,DE] / (sum {J in COU} P[J,DE]);
+
+# mprod and trade derived from the model
+subject to M_constraint {(HQ,PR) in BILAT}:
+	sum {DE in BILAT} X[HQ,PR,DE] = mprod[HQ,PR];
+subject to T_constraint {(PR,DE) in BILAT}:
+	sum {HQ in BILAT} X[HQ,PR,DE] = trade[PR,DE];
+
+# Bounds for variables p and X
+subject to p_bound {(HQ,PR,DE) in TRILAT}:
+	0 <= p[HQ,PR,DE] <= 100;
+subject to X_bound {(HQ,PR,DE) in TRILAT}:
+	max(mprod[HQ,PR] + trade[PR,DE] 
+                     - (sum{m in COU} trade[PR,m]),0)
+               <=  X[HQ,PR,DE] <= min(mprod[HQ,PR],trade[PR,DE]);	
+
+# Normalization for xi
+subject to xi_normalization {DE in COU}:
+	xi[DE,DE] = 1;
+
+]]></model>
+
+<data></data>
+
+<commands><![CDATA[
+# Set parameters
+let theta := theta_val;
+let rho   := rho_val;
+	
+# Initial guess begins
+let {(HQ,PR) in BILAT} gamma[HQ,PR] := 1;
+let {(PR,DE) in BILAT} xi[PR,DE] := 1;
+# Initial guess ends
+
+solver_option
+solve;
+option display_1col 100000;
+option display_precision 9;
+display X;
+display gamma;
+display xi;
+display solve_result;
+]]></commands>
+
+<comments><![CDATA[This mod file states and fits Ramondo and Rodriguez-Clare model from the data.]]></comments>
+
+</document>
+
+

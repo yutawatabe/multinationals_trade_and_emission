@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 #%% Set a class for a WW model
-class Model_single_industry:
+class ModelSingleIndustry:
     """
     This class in a model in Wanner and Watabe (2021)
     where there is only a single indutry. Inputs are provided bin __init__ method.
@@ -296,36 +296,37 @@ class Model_single_industry:
         # Ramondo Rodriguez-Clare FDI
         elif assumption == "RRC":
             # Warn that we need wage 
-            print("Print wage just in case if it is not there")
-            print(self.w)        
-            # Set default initial parameters
-            gamma,xi = np.ones((N,N)),np.ones((N,N))
-            count = 0
-            dif = 1
-            # Start searching over eqm gamma
-            while dif > 0.001:
-                count += 1
-                gamma_old,xi_old = copy.deepcopy(gamma),copy.deepcopy(xi)
-                p = np.zeros((N,N,N))
-                for HQ,PR,DE in np.ndindex((N,N,N)):
-                    p[HQ,PR,DE] = gamma[HQ,PR] * xi[PR,DE] * self.w[PR]
-                pi,_,_ = self.calcpi(p)
-                for HQ,PR,DE in np.ndindex((N,N,N)):
-                    X[HQ,PR,DE] = pi[HQ,PR,DE] * self.Xm[DE]
-                M_model = np.sum(X,axis=2)
-                T_model = np.sum(X,axis=0)
-                if count % 2 == 0:
-                    gamma = gamma * M_model / self.M * 1/10 + gamma_old * 9/10
-                else:
-                    xi    = xi * T_model / self.T * 1/10 + xi_old * 9/10
-                # Normalize xi so that diagonal element is always 1
-                for DE in range(N):
-                    xi[:,DE] = xi[:,DE] / xi[DE,DE]
-                dif = max(np.max(abs(self.T-T_model)),np.max(abs(self.M-M_model)))
-            print("Ramondo Rodriguez-ClareFDI exists and set")
-            self.X = X
-            self.xi = xi
-            self.gamma = gamma
+            if self.w is None:
+                print("Wage does not exist")
+            else:
+                # Set default initial parameters
+                gamma,xi = np.ones((N,N)),np.ones((N,N))
+                count = 0
+                dif = 1
+                # Start searching over eqm gamma
+                while dif > 0.001:
+                    count += 1
+                    gamma_old,xi_old = copy.deepcopy(gamma),copy.deepcopy(xi)
+                    p = np.zeros((N,N,N))
+                    for HQ,PR,DE in np.ndindex((N,N,N)):
+                        p[HQ,PR,DE] = gamma[HQ,PR] * xi[PR,DE] * self.w[PR]
+                    pi,_,_ = self.calcpi(p)
+                    for HQ,PR,DE in np.ndindex((N,N,N)):
+                        X[HQ,PR,DE] = pi[HQ,PR,DE] * self.Xm[DE]
+                    M_model = np.sum(X,axis=2)
+                    T_model = np.sum(X,axis=0)
+                    if count % 2 == 0:
+                        gamma = gamma * M_model / self.M * 1/10 + gamma_old * 9/10
+                    else:
+                        xi    = xi * T_model / self.T * 1/10 + xi_old * 9/10
+                    # Normalize xi so that diagonal element is always 1
+                    for DE in range(N):
+                        xi[:,DE] = xi[:,DE] / xi[DE,DE]
+                    dif = max(np.max(abs(self.T-T_model)),np.max(abs(self.M-M_model)))
+                print("Ramondo Rodriguez-ClareFDI exists and set")
+                self.X = X
+                self.xi = xi
+                self.gamma = gamma
         else:
             print("This assumption is not well defined")
 
@@ -338,35 +339,36 @@ class Model_single_industry:
         """
         N = self.N
         if self.assumption == "RRC":
-            print("Fill in emission pattern for RRC allocation")
-            print("Print wage just in case if it not there")
-            print(self.w)
-            # Calculate quantity produced
-            q = np.zeros((N,N,N))
-            for HQ,PR,DE in np.ndindex(N,N,N):
-                q[HQ,PR,DE] = X[HQ,PR,DE] / (self.w[PR] * self.gamma[HQ,PR] * self.xi[PR,DE])
-            if emission_assumption == "common_production_location":
-                # Calculate emission intensity and emission
-                ql = np.sum(q,axis=(0,2))
-                al = self.Zl / ql
-                self.Z = np.zeros((N,N,N))
+            if self.w is None:
+                print("Wage does not exist")
+                return
+            else:
+                # Calculate quantity produced
+                q = np.zeros((N,N,N))
                 for HQ,PR,DE in np.ndindex(N,N,N):
-                    self.Z[HQ,PR,DE] = al[PR] * q[HQ,PR,DE]
-                print("Filled emission following common production location")
-            elif emission_assumption == "common_headquarter_location":
-                # This is convenient to solve LP 
-                # Bit complex so verify if this is working
-                qli = np.sum(q,axis=2).T
-                ai = np.linalg.solve(qli,self.Zl)
-                if np.any(ai<0):
-                    print("The common headquarter location emission intensity is rejected")
-                else:
-                    print("The common headquarter location emission inteisty is not rejected")
+                    q[HQ,PR,DE] = X[HQ,PR,DE] / (self.w[PR] * self.gamma[HQ,PR] * self.xi[PR,DE])
+                if emission_assumption == "common_production_location":
+                    # Calculate emission intensity and emission
+                    ql = np.sum(q,axis=(0,2))
+                    al = self.Zl / ql
                     self.Z = np.zeros((N,N,N))
                     for HQ,PR,DE in np.ndindex(N,N,N):
-                        self.Z[HQ,PR,DE] = ai[HQ] * q[HQ,PR,DE]
-            else:
-                print("The assumption is not currently in our plan")
+                        self.Z[HQ,PR,DE] = al[PR] * q[HQ,PR,DE]
+                    print("Filled emission following common production location")
+                elif emission_assumption == "common_headquarter_location":
+                    # This is convenient to solve LP 
+                    # Bit complex so verify if this is working
+                    qli = np.sum(q,axis=2).T
+                    ai = np.linalg.solve(qli,self.Zl)
+                    if np.any(ai<0):
+                        print("The common headquarter location emission intensity is rejected")
+                    else:
+                        print("The common headquarter location emission inteisty is not rejected")
+                        self.Z = np.zeros((N,N,N))
+                        for HQ,PR,DE in np.ndindex(N,N,N):
+                            self.Z[HQ,PR,DE] = ai[HQ] * q[HQ,PR,DE]
+                else:
+                    print("The assumption is not currently in our plan")
         else:
             print("The assumption is not RRC.")        
 
@@ -524,7 +526,7 @@ if __name__ == '__main__' :
     D0 = np.zeros((N))
 
     print("Set up a two country example and solve it")
-    sample_model = Model_single_industry(N=2,tau=tau0,L=L0,a=a0,g=g0,D=D0) 
+    sample_model = ModelSingleIndustry(N=2,tau=tau0,L=L0,a=a0,g=g0,D=D0) 
     sample_model.solve()
     print(sample_model.X)
 
@@ -568,7 +570,7 @@ if __name__ == '__main__' :
     """
     T0,M0,Zl0 = np.sum(X,axis=0),np.sum(X,axis=2),np.sum(Z,axis=(0,2))
     w0    = np.ones((N))
-    model_triangulation = Model_single_industry(N=N,theta=4.5,rho=0.55,T=T0,M=M0,w=w0,Zl=Zl0,E=E0)
+    model_triangulation = ModelSingleIndustry(N=N,theta=4.5,rho=0.55,T=T0,M=M0,w=w0,Zl=Zl0,E=E0)
     model_triangulation.fill_allocation("PFDI")
     print(model_triangulation.assumption)
     model_triangulation.fill_allocation("HFDI")

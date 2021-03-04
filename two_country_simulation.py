@@ -4,7 +4,7 @@ import pandas as pd
 import copy
 import matplotlib.pyplot as plt
 import seaborn as sns
-import WWmodels
+import ww_models
 
 #%% Create some simple function
 
@@ -86,13 +86,13 @@ def calc_aggregate(X,Z,E):
 
 # Simulate the model from the parameters and give output which is aggregated
 def simulate_and_aggregate(N,theta,rho,tau_input,L,a,g,D):
-    model = WWmodels.Model_single_industry(N=N,theta=theta,rho=rho,tau=tau_input,L=L,a=a,g=g,D=D)
+    model = ww_models.ModelSingleIndustry(N=N,theta=theta,rho=rho,tau=tau_input,L=L,a=a,g=g,D=D)
     model.solve()
     Zl,El,EX,IM,OI,II = calc_aggregate(model.X,model.Z,model.E)
     return np.concatenate([Zl,El,EX,IM,OI,II])
 
 def exacthatalgebra_and_aggregate(N,theta,rho,X,Z,E,D,tauhat_input):
-    model = WWmodels.Model_single_industry(N=N,theta=theta,rho=rho,X=X,Z=Z,E=E,D=D)
+    model = ww_models.ModelSingleIndustry(N=N,theta=theta,rho=rho,X=X,Z=Z,E=E,D=D)
     _,_,_,_,_,X1,Z1,E1 = model.exacthatalgebra(tauhat_input)
     Zl,El,EX,IM,OI,II = calc_aggregate(X1,Z1,E1)
     return np.concatenate([Zl,El,EX,IM,OI,II])
