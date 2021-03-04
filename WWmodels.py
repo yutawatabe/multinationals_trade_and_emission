@@ -38,6 +38,7 @@ class Model_single_industry:
                 E   = None, # Emission from trade
 
                 # Data (for Triangulation)
+                # We also want wage data for this.
                 T  = None, # Trade data
                 M  = None, # Multinational production data
                 Zl = None, # Observed emission for each country of production
@@ -144,9 +145,10 @@ class Model_single_industry:
 
     def exacthatalgebra(self,tauhat):
         """ 
-        This function solves the equilibirum outcome in chnages
-        from the eqm outcomes (X,Z,E) and the elasticity parameter theta and rho (which contained in the object).
-        This function will return the alternative equilibrium outcome. This does not store any new variable in the class.
+        This method solves the equilibirum outcome in chnages
+        from the eqm outcomes (X,Z,E) and the elasticity parameter theta and rho (which contained in the instance).
+        This method requires tauhat, which is a ndarray((N,N,N)). This method does not use wage as an input.
+        This method will return the alternative equilibrium outcome. This does not store any new variable in the class.
         """
         N = self.N
         
@@ -246,7 +248,8 @@ class Model_single_industry:
     def fill_allocation(self,assumption):
         """
         This function fill in an allocation from the data.
-        There are PFDI, HFDI, VFDI, RRC as a choice.
+        Assumptions are PFDI, HFDI, VFDI, RRC.
+        For RRC, it will provide a parameter gamma and xi.
         """
         N,T,M = self.N,self.T,self.M
         X = np.zeros((N,N,N))
@@ -292,6 +295,9 @@ class Model_single_industry:
                 self.X = X
         # Ramondo Rodriguez-Clare FDI
         elif assumption == "RRC":
+            # Warn that we need wage 
+            print("Print wage just in case if it is not there")
+            print(self.w)        
             # Set default initial parameters
             gamma,xi = np.ones((N,N)),np.ones((N,N))
             count = 0
@@ -302,7 +308,7 @@ class Model_single_industry:
                 gamma_old,xi_old = copy.deepcopy(gamma),copy.deepcopy(xi)
                 p = np.zeros((N,N,N))
                 for HQ,PR,DE in np.ndindex((N,N,N)):
-                    p[HQ,PR,DE] = gamma[HQ,PR] * xi[PR,DE]
+                    p[HQ,PR,DE] = gamma[HQ,PR] * xi[PR,DE] * self.w[PR]
                 pi,_,_ = self.calcpi(p)
                 for HQ,PR,DE in np.ndindex((N,N,N)):
                     X[HQ,PR,DE] = pi[HQ,PR,DE] * self.Xm[DE]
@@ -312,12 +318,57 @@ class Model_single_industry:
                     gamma = gamma * M_model / self.M * 1/10 + gamma_old * 9/10
                 else:
                     xi    = xi * T_model / self.T * 1/10 + xi_old * 9/10
+                # Normalize xi so that diagonal element is always 1
+                for DE in range(N):
+                    xi[:,DE] = xi[:,DE] / xi[DE,DE]
                 dif = max(np.max(abs(self.T-T_model)),np.max(abs(self.M-M_model)))
-                #print(dif)
             print("Ramondo Rodriguez-ClareFDI exists and set")
             self.X = X
+            self.xi = xi
+            self.gamma = gamma
         else:
             print("This assumption is not well defined")
+
+    def fill_emission(self,emission_assumption):
+        """
+        This method will fill in the emission contents based
+        on two assumptions: Only production loction matters
+        and only headquarters location matters. WARNING is that
+        this only works for RRC assumption.
+        """
+        N = self.N
+        if self.assumption == "RRC":
+            print("Fill in emission pattern for RRC allocation")
+            print("Print wage just in case if it not there")
+            print(self.w)
+            # Calculate quantity produced
+            q = np.zeros((N,N,N))
+            for HQ,PR,DE in np.ndindex(N,N,N):
+                q[HQ,PR,DE] = X[HQ,PR,DE] / (self.w[PR] * self.gamma[HQ,PR] * self.xi[PR,DE])
+            if emission_assumption == "common_production_location":
+                # Calculate emission intensity and emission
+                ql = np.sum(q,axis=(0,2))
+                al = self.Zl / ql
+                self.Z = np.zeros((N,N,N))
+                for HQ,PR,DE in np.ndindex(N,N,N):
+                    self.Z[HQ,PR,DE] = al[PR] * q[HQ,PR,DE]
+                print("Filled emission following common production location")
+            elif emission_assumption == "common_headquarter_location":
+                # This is convenient to solve LP 
+                # Bit complex so verify if this is working
+                qli = np.sum(q,axis=2).T
+                ai = np.linalg.solve(qli,self.Zl)
+                if np.any(ai<0):
+                    print("The common headquarter location emission intensity is rejected")
+                else:
+                    print("The common headquarter location emission inteisty is not rejected")
+                    self.Z = np.zeros((N,N,N))
+                    for HQ,PR,DE in np.ndindex(N,N,N):
+                        self.Z[HQ,PR,DE] = ai[HQ] * q[HQ,PR,DE]
+            else:
+                print("The assumption is not currently in our plan")
+        else:
+            print("The assumption is not RRC.")        
 
 
     def verify_exacthatalgebra(self,tauhat):
@@ -492,8 +543,13 @@ if __name__ == '__main__' :
     print("Second it triangulated three country example")
     #%% Triangulation
     # Simple sample case (where VFDI is a benchmark)
+    # Symmetric 
     N = 3
+    ai_temp = [1,2,1.5]
+    g_temp = 1
     X = np.zeros((N,N,N))
+    Z = np.zeros((N,N,N))
+    E0 = np.zeros((N,N,N))
     for HQ,PR,DE in np.ndindex((N,N,N)):
         for HQ,PR,DE in np.ndindex(N,N,N):
             if HQ == PR and PR == DE:
@@ -503,13 +559,26 @@ if __name__ == '__main__' :
             elif HQ == PR and PR != DE:
                 X[HQ,HQ,DE] = 2     
             elif HQ == DE and PR != DE:
-                X[DE,PR,DE] = 1            
-    T0,M0 = np.sum(X,axis=0),np.sum(X,axis=2)
-    Zl0    = np.random.rand((N))
-    model_triangulation = Model_single_industry(N=N,theta=4.5,rho=0.55,T=T0,M=M0,Zl=Zl0)
+                X[DE,PR,DE] = 1       
+            Z[HQ,PR,DE] = X[HQ,PR,DE] * ai_temp[HQ]
+            E0[HQ,PR,DE] = X[HQ,PR,DE] * g_temp
+    """
+    N = 3
+    X = np.random.rand(N,N,N) + 1
+    """
+    T0,M0,Zl0 = np.sum(X,axis=0),np.sum(X,axis=2),np.sum(Z,axis=(0,2))
+    w0    = np.ones((N))
+    model_triangulation = Model_single_industry(N=N,theta=4.5,rho=0.55,T=T0,M=M0,w=w0,Zl=Zl0,E=E0)
     model_triangulation.fill_allocation("PFDI")
+    print(model_triangulation.assumption)
     model_triangulation.fill_allocation("HFDI")
+    print(model_triangulation.assumption)
     model_triangulation.fill_allocation("VFDI")
+    print(model_triangulation.assumption)
+    model_triangulation.fill_allocation("RRC")
+    print(model_triangulation.assumption)
+    model_triangulation.fill_emission("common_production_location")
+    model_triangulation.fill_emission("common_headquarter_location")
 
 
 
