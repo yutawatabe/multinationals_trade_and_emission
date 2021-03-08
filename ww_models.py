@@ -31,7 +31,6 @@ class ModelSingleIndustry:
                 D   = None, # Trade deficit
 
                 # Equilibrium outcome
-                Xm  = None, # Total expenditure of country m
                 X   = None, # Allocation 
                 w   = None, # Wage
                 Z   = None, # Emission from production
@@ -46,7 +45,7 @@ class ModelSingleIndustry:
                 ):
                 self.theta, self.rho, self.N, = theta, rho, N
                 self.tau, self.L, self.a, self.g, self.D = tau, L, a, g, D
-                self.Xm, self.X, self.w = Xm, X, w
+                self.X, self.w = X, w
                 self.T,self.M,self.Zl = T, M, Zl
                 self.Z,self.E = Z,E
 
@@ -322,19 +321,22 @@ class ModelSingleIndustry:
                     # Normalize xi so that diagonal element is always 1
                     for DE in range(N):
                         xi[:,DE] = xi[:,DE] / xi[DE,DE]
+                        gamma[:,DE] = gamma[:,DE] / gamma[DE,DE]
+                    
                     dif = max(np.max(abs(self.T-T_model)),np.max(abs(self.M-M_model)))
                 print("Ramondo Rodriguez-ClareFDI exists and set")
                 self.X = X
                 self.xi = xi
                 self.gamma = gamma
+                self.p = p
         else:
             print("This assumption is not well defined")
 
     def fill_emission(self,emission_assumption):
         """
         This method will fill in the emission contents based
-        on two assumptions: Only production loction matters
-        and only headquarters location matters. WARNING is that
+        on two assumptions: Only production loction matters (common_production_location)
+        and only headquarters location matters (common_headquarter_location). WARNING is that
         this only works for RRC assumption.
         """
         N = self.N
@@ -346,16 +348,18 @@ class ModelSingleIndustry:
                 # Calculate quantity produced
                 q = np.zeros((N,N,N))
                 for HQ,PR,DE in np.ndindex(N,N,N):
-                    q[HQ,PR,DE] = X[HQ,PR,DE] / (self.w[PR] * self.gamma[HQ,PR] * self.xi[PR,DE])
+                    q[HQ,PR,DE] = self.X[HQ,PR,DE] / (self.w[PR] * self.gamma[HQ,PR] * self.xi[PR,DE])
                 if emission_assumption == "common_production_location":
                     # Calculate emission intensity and emission
                     ql = np.sum(q,axis=(0,2))
                     al = self.Zl / ql
                     self.Z = np.zeros((N,N,N))
+                    self.a = np.zeros((N,N,N))
                     for HQ,PR,DE in np.ndindex(N,N,N):
                         self.Z[HQ,PR,DE] = al[PR] * q[HQ,PR,DE]
+                        self.a[HQ,PR,DE] = al[PR]
                     print("Filled emission following common production location")
-                elif emission_assumption == "common_headquarter_location":
+                elif emission_assumption == "common_headquarters_location":
                     # This is convenient to solve LP 
                     # Bit complex so verify if this is working
                     qli = np.sum(q,axis=2).T

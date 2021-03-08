@@ -6,9 +6,11 @@
 <email>yutawatabe.jobs@gmail.com</email>
 <model><![CDATA[
 
-set COU;
+# Set countries 
+set COU ordered;
 set BILAT = COU cross COU;
 set TRILAT = COU cross COU cross COU;
+set FIVELAT = COU cross COU cross COU cross COU cross COU;
 
 # Parameters
 param theta >= 0;
@@ -17,44 +19,90 @@ param rho   >=0, <1;
 # Observed variables
 param mprod {BILAT} >=0;
 param trade {BILAT} >=0; 
-param X_m {DE in COU} = sum{PR in COU} trade[PR,DE];
-param Zl {BILAT} >=0;
+param Xm {DE in COU} = sum{PR in COU} trade[PR,DE];
+param Ym {PR in COU} = sum{DE in COU} trade[PR,DE];
+param D{DE in COU} = Xm[DE] - Ym[DE];
+param Zl {COU} >=0;
 param E  {TRILAT} >=0;
 param w {COU} >=0;
+param tauhat {TRILAT} >=0;
 
 # Parameter to find
 var xi    {BILAT} >= 0, <=10;
 var gamma {BILAT} >= 0, <=10;
+var a     {TRILAT} >= 0;
 
-# Describe a demand function
-var p {(HQ,PR,DE) in TRILAT} = gamma[HQ,PR] * xi[PR,DE] * w[DE]; 
+# Describe variables from an equilibrium outcome
+# CAUTION: Here p is p^(-theta) (this is convenient to solve)
+# so we need to renormalize it by powering it with (-1/theta)
+# This appears in the definition of Z
+var p {(HQ,PR,DE) in TRILAT} = gamma[HQ,PR] * xi[PR,DE] / w[DE]; 
 var P {(HQ,DE) in BILAT} = 
     (
      sum {K in COU} p[HQ,K,DE]^(1/(1-rho))
-    )^(1-rho);
-
-var X {(HQ,PR,DE) in TRILAT} = X_m[DE]
+    )^((1-rho));
+var X {(HQ,PR,DE) in TRILAT} = Xm[DE]
     * (p[HQ,PR,DE] / P[HQ,DE])^(1/(1-rho))
     * P[HQ,DE] / (sum {J in COU} P[J,DE]);
+var Z {(HQ,PR,DE) in TRILAT} = a[HQ,PR,DE] * X[HQ,PR,DE] * p[HQ,PR,DE]^(1/theta);
 
-# mprod and trade derived from the model
-subject to M_constraint {(HQ,PR) in BILAT}:
-	sum {DE in BILAT} X[HQ,PR,DE] = mprod[HQ,PR];
-subject to T_constraint {(PR,DE) in BILAT}:
-	sum {HQ in BILAT} X[HQ,PR,DE] = trade[PR,DE];
+# Define expenditure share
+var pi {(HQ,PR,DE) in TRILAT}
+	 = X[HQ,PR,DE] / Xm[DE];
+var Pi {(HQ,DE) in BILAT}
+      = sum{PR in COU} pi[HQ,PR,DE];
+var pic {(HQ,PR,DE) in TRILAT}
+	 = pi[HQ,PR,DE] / Pi[HQ,DE];
 
-# Bounds for variables p and X
-subject to p_bound {(HQ,PR,DE) in TRILAT}:
-	0 <= p[HQ,PR,DE] <= 100;
+# Define Auxiliary parameter
+var what {COU} >=0.5, <=1.5;
+var phat {(HQ,PR,DE) in TRILAT} 
+    = what[PR] * tauhat[HQ,PR,DE]; 
+var Phat {(HQ,DE) in BILAT}
+    = (sum{PR in COU} pic[HQ,PR,DE] * phat[HQ,PR,DE]^(-theta/(1-rho)))
+      ^(-(1-rho)/theta);
+var Pmhat {DE in COU}
+    = (sum{HQ in COU} Pi[HQ,DE] * Phat[HQ,DE]^(-theta))^(-1/theta);
+var pihat {(HQ,PR,DE) in TRILAT} 
+    = (Phat[HQ,DE]^(-theta) * phat[HQ,PR,DE]^(-theta/(1-rho)))
+    / (sum{J in COU} (Pi[J,DE] * Phat[J,DE]^(-theta)))
+    / (sum{K in COU} pic[HQ,K,DE] * phat[HQ,K,DE]^(-theta/(1-rho)));
+var Xm1 {DE in COU} 
+    = what[DE] * Ym[DE] + D[DE];
+var Z1 {(HQ,PR,DE) in TRILAT}
+    = Z[HQ,PR,DE] * pihat[HQ,PR,DE] * (Xm1[DE] / Xm[DE]) / phat[HQ,PR,DE];
+var E1 {(HQ,PR,DE) in TRILAT}
+    = E[HQ,PR,DE] * pihat[HQ,PR,DE] * (Xm1[DE] / Xm[DE]) / phat[HQ,PR,DE];
+
+# Bounds for variables X
 subject to X_bound {(HQ,PR,DE) in TRILAT}:
 	max(mprod[HQ,PR] + trade[PR,DE] 
                      - (sum{m in COU} trade[PR,m]),0)
                <=  X[HQ,PR,DE] <= min(mprod[HQ,PR],trade[PR,DE]);	
 
-# Normalization for xi
+# Normalization constraints
+#subject to w_nomralization:
+#	sum {PR in COU} what[PR] = 5;
 subject to xi_normalization {DE in COU}:
 	xi[DE,DE] = 1;
+subject to gamma_normalization {PR in COU}:
+    gamma[PR,PR] = 1;
 
+# Data constraints
+subject to MSummation {(HQ,PR) in BILAT}:
+	sum {(HQ,PR,DE) in TRILAT} X[HQ,PR,DE] = mprod[HQ,PR];	
+subject to TSummation {(PR,DE) in BILAT}:
+	sum {(HQ,PR,DE) in TRILAT} X[HQ,PR,DE] = trade[PR,DE];
+subject to ZlSummation {PR in COU}:
+    sum {(HQ,PR,DE) in TRILAT} Z[HQ,PR,DE] = Zl[PR];
+
+# General Equilibrium
+subject to MarketClearing {PR in COU}:
+	Xm1[PR] - D[PR] = sum{(HQ,DE) in BILAT} (Xm1[DE] 
+                * pihat[HQ,PR,DE] * pi[HQ,PR,DE]);
+
+# Objective function
+var TotalEmission = sum{(HQ,PR,DE) in TRILAT} (Z1[HQ,PR,DE] + E1[HQ,PR,DE]);
 ]]></model>
 
 <data></data>
@@ -69,14 +117,20 @@ let {(HQ,PR) in BILAT} gamma[HQ,PR] := 1;
 let {(PR,DE) in BILAT} xi[PR,DE] := 1;
 # Initial guess ends
 
-solver_option
+objective;
+solver_option;
 solve;
 option display_1col 100000;
 option display_precision 9;
+display obj_output;
 display X;
 display gamma;
 display xi;
+display a;
+display Z;
+display p;
 display solve_result;
+
 ]]></commands>
 
 <comments><![CDATA[This mod file states and fits Ramondo and Rodriguez-Clare model from the data.]]></comments>
