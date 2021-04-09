@@ -31,8 +31,8 @@ class NEOS:
                  parameters= {}, # Dictionary of parameter values to be filled in
                  min_max ="",    # Whether we want to minimize or maximize
                  obj_func="",    # Objective function we want to minimize
-                 model="",       # A template of mod file that describe the problem (xml file)
-                 dat="",         # Name of the txt file that include dat description
+                 modfile="",     # A name of a template of the mod file that describe the problem (xml file)
+                 datfile="",     # Name of the txt file that include dat description
                  # Information of the solver
                  category="",        # category of the problem
                  solver="",          # what solver to use
@@ -42,8 +42,11 @@ class NEOS:
                  ):       
 
         # Set attributes
-        self.min_max,self.obj_func = min_max,obj_func
+        self.parameters,self.min_max,self.obj_func = parameters,min_max,obj_func
+        self.modfile,self.datfile = modfile,datfile
         self.category,self.solver,self.solver_option = category,solver,solver_option
+        self.settings = settings
+    
         for attr_name,attr_value in (parameters|settings).items():
             setattr(self,attr_name,attr_value)
 
@@ -56,10 +59,10 @@ class NEOS:
 
         # Start parsing xml file and input information
         # xml goes as [category,solver,inputMethod,priority,email,model,data,command,comment]
-        xml = ET.parse(model).getroot()
+        xml = ET.parse(modfile).getroot()
         xml[0].text = category
         xml[1].text = solver
-        xml[6].text = ET.parse(dat).getroot().text
+        xml[6].text = ET.parse(datfile).getroot().text
         
         # Replacing command text (7th of xml file)
         xml[7].text = (xml[7].text.replace('objective',min_max + " " + "obj_output" + " " + ":" + obj_func)
@@ -101,6 +104,18 @@ class NEOS:
         SERVER.killJob(self.jobNumber,self.jobPassword)
         self.status = "killed"
 
+    def check_done(self):
+        # Set a server
+        SERVER = xmlrpclib.Server("https://neos-server.org:3333")  
+        try:
+            status = SERVER.getJobStatus(self.jobNumber,self.jobPassword)
+            return status != "Running"
+        except:
+            print("There's something wrong with the job status")
+            print(self.jobNumber)
+            print(self.jobPassword)
+            return None
+
     def retrieve(self):
         if self.status == "submitted":
             # Set a server
@@ -139,6 +154,115 @@ class NEOS:
         elif self.status == "killed":
             print("The job is killed")
         return
+
+    def retrieve_variable(self,variable):
+        """
+        This method retrieves variable from the NEOS result.
+        The input variables is a string object, and the output is variables in the string
+        and the float.
+        """
+        # The input variable is a string object
+        var_line = re.search(variable + " :="+ ".*?" + ";",self.result,re.DOTALL)
+        var_line_table = re.search(variable + " \[" + ".*?" + ";",self.result,re.DOTALL)
+        if var_line:
+            var_text      = var_line.group(0)
+            temp = re.compile(r'\d+(?:\.\d*)') 
+            variable = [float(element) for element in var_line.group(0).split() if temp.match(element)]        
+            return var_text,variable
+        elif var_line_table:
+            var_text      = var_line_table.group(0)
+            temp = re.compile(r'\d+(?:\.\d*)') 
+            variable = [float(element) for element in var_line_table.group(0).split() if temp.match(element)]                  
+            return var_text,variable
+        else:
+            print("There is no variables displayed")
+            return None,None
+
+    def to_DataFrame(self):
+        """
+        This method exports Neos into DataFrame style.
+        """
+        df_Neos = pd.DataFrame(
+                {'parameters': str(self.parameters),
+                'min_max':self.min_max,
+                'obj_func':self.obj_func,
+                'value':self.value,
+                'lb':self.lb,
+                'ub':self.ub,
+                'modfil':self.modfile,
+                'datfile':self.datfile,
+                'jobNumber':str(self.jobNumber),
+                'jobPassword':str(self.jobPassword),
+                'solver':self.solver,   
+                'solver_option':self.solver_option,
+                'solve_result':self.solve_result,
+                'status':self.status,
+                'settings':str(self.settings),
+                },
+                    index=[self.jobNumber]
+                    )
+        return df_Neos
+
+def submit_and_retrieve_NEOSs(NEOSs,file): 
+    """
+    Retreive and resubmit results. For the list of problems (Neos instances)
+    it enumerates all the problems to check the condition. 
+    """
+    problems = list(NEOSs.keys())
+    jobs_limit = 15
+    solved = 0
+    ongoing = 0
+    while solved < len(NEOSs):
+        ongoing = max([ongoing,0])
+        print(solved)
+        print(ongoing)
+        problem = problems.pop(0)      
+        print(problem)
+        # Submit job if it is not submitted yet 
+        # and has less jobs than 15 jobs
+        if (NEOSs[problem].status == "unsubmitted") & (ongoing < jobs_limit):
+            print("Unbsumitted. Trying to submit")
+            try:
+                NEOSs[problem].submit()
+                time.sleep(30)
+                ongoing += 1
+            except:
+                print("Submission failed. Skip and pass to the next problem")
+                print(sys.exc_info())
+            problems.append(problem)
+        # Do not submit job if there's too many jobs running
+        elif (NEOSs[problem].status == "unsubmitted") & (ongoing >= jobs_limit):
+            print("Too many jobs running")
+            problems.append(problem)
+        # Retrive job if it was submitted
+        elif NEOSs[problem].status == "submitted":
+                if NEOSs[problem].check_done():
+                    print("Done, retrieve")
+                    NEOSs[problem].retrieve()
+                    ongoing -= 1
+                else:
+                    print("Not done yet")
+                    problems.append(problem)
+        
+        # Check the result
+        if NEOSs[problem].status == "failed":
+            print("There's something wrong print the result")
+            print(NEOSs[problem].jobNumber)
+            print(NEOSs[problem].jobPassword)
+            try:
+                problem.submit()
+                ongoing += 1
+                time.sleep(30)
+                NEOSs[problem].status == "submitted"
+            except:
+                print("Retried, but submission failed")
+                print(sys.exc_info())
+            problems.append(problem)
+        elif NEOSs[problem].status == "successful":
+            solved += 1
+        with open(file,'wb') as f1:
+            pickle.dump(NEOSs,f1)  
+        time.sleep(10)  
 
 #%% Simulate three country model and fill solve the RRC
 if __name__ == '__main__' :
@@ -224,17 +348,18 @@ if __name__ == '__main__' :
                                  'rho':rho_benchmark},
                     min_max="minimize",
                     obj_func="TotalEmission",
-                    model="./xmls/RRC_emission.xml",
-                    dat="./tempfolder/data.xml",
+                    modfile="./xmls/RRC_emission.xml",
+                    datfile="./tempfolder/data.xml",
                     category="cp",
                     solver="Knitro",
                     solver_option='knitro_options "ms_enable=1 ms_maxsolves=10 ms_maxtime_real=25200 outlev=2";',
                     settings={"explanation":"sample project with three countries"})
-    #test_NEOS.add_to_model("subject to CommonProductionLocation {(HQ0,HQ1,PR,DE0,DE1) in FIVELAT}: a[HQ0,PR,DE0]= a[HQ1,PR,DE1];")
+    test_NEOS.add_to_model("subject to CommonProductionLocation {(HQ0,HQ1,PR,DE0,DE1) in FIVELAT}: a[HQ0,PR,DE0]= a[HQ1,PR,DE1];")
     #test_NEOS.add_to_model("subject to CommonHeadquartersLocation {(HQ,PR0,PR1,DE0,DE1) in FIVELAT}: a[HQ,PR0,DE0]= a[HQ,PR1,DE1];")
 
     test_NEOS.submit()
     test_NEOS.retrieve()
+    print(test_NEOS.to_DataFrame())
     print("Check the result")
 
     

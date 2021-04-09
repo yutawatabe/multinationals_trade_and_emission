@@ -159,6 +159,7 @@ class ModelSingleIndustry:
         pi = np.zeros((N,N,N))
         for HQ,PR,DE in np.ndindex((N,N,N)):
             pi[HQ,PR,DE] = self.X[HQ,PR,DE] / self.Xm[DE]
+        # pic is pi conditional on the headquarters location
         pic = np.zeros((N,N,N))
         Pi = np.sum(pi,1)
         for HQ,PR,DE in np.ndindex((N,N,N)):
@@ -340,42 +341,40 @@ class ModelSingleIndustry:
         this only works for RRC assumption.
         """
         N = self.N
-        if self.assumption == "RRC":
-            if self.w is None:
-                print("Wage does not exist")
-                return
-            else:
-                # Calculate quantity produced
-                q = np.zeros((N,N,N))
-                for HQ,PR,DE in np.ndindex(N,N,N):
-                    q[HQ,PR,DE] = self.X[HQ,PR,DE] / (self.w[PR] * self.gamma[HQ,PR] * self.xi[PR,DE])
-                if emission_assumption == "common_production_location":
-                    # Calculate emission intensity and emission
-                    ql = np.sum(q,axis=(0,2))
-                    al = self.Zl / ql
-                    self.Z = np.zeros((N,N,N))
-                    self.a = np.zeros((N,N,N))
-                    for HQ,PR,DE in np.ndindex(N,N,N):
-                        self.Z[HQ,PR,DE] = al[PR] * q[HQ,PR,DE]
-                        self.a[HQ,PR,DE] = al[PR]
-                    print("Filled emission following common production location")
-                elif emission_assumption == "common_headquarters_location":
-                    # This is convenient to solve LP 
-                    # Bit complex so verify if this is working
-                    qli = np.sum(q,axis=2).T
-                    ai = np.linalg.solve(qli,self.Zl)
-                    if np.any(ai<0):
-                        print("The common headquarter location emission intensity is rejected")
-                    else:
-                        print("The common headquarter location emission inteisty is not rejected")
-                        self.Z = np.zeros((N,N,N))
-                        for HQ,PR,DE in np.ndindex(N,N,N):
-                            self.Z[HQ,PR,DE] = ai[HQ] * q[HQ,PR,DE]
-                else:
-                    print("The assumption is not currently in our plan")
+        if self.w is None:
+            print("Wage does not exist")
+            return
         else:
-            print("The assumption is not RRC.")        
-
+            # Calculate quantity produced
+            self.inverse_solve()
+            q = np.zeros((N,N,N))
+            for HQ,PR,DE in np.ndindex(N,N,N):
+                q[HQ,PR,DE] = self.X[HQ,PR,DE] / (self.w[PR] * self.tau[HQ,PR,DE])
+            q = np.nan_to_num(q)
+            if emission_assumption == "common_production_location":
+                # Calculate emission intensity and emission
+                ql = np.sum(q,axis=(0,2))
+                al = self.Zl / ql
+                self.Z = np.zeros((N,N,N))
+                self.a = np.zeros((N,N,N))
+                for HQ,PR,DE in np.ndindex(N,N,N):
+                    self.Z[HQ,PR,DE] = al[PR] * q[HQ,PR,DE]
+                    self.a[HQ,PR,DE] = al[PR]
+                print("Filled emission following common production location")
+            elif emission_assumption == "common_headquarters_location":
+                # This is convenient to solve LP 
+                # Bit complex so verify if this is working
+                qli = np.sum(q,axis=2).T
+                ai = np.linalg.solve(qli,self.Zl)
+                if np.any(ai<0):
+                    print("The common headquarter location emission intensity is rejected")
+                else:
+                    print("The common headquarter location emission inteisty is not rejected")
+                    self.Z = np.zeros((N,N,N))
+                    for HQ,PR,DE in np.ndindex(N,N,N):
+                        self.Z[HQ,PR,DE] = ai[HQ] * q[HQ,PR,DE]
+            else:
+                print("The assumption is not currently in our plan")            
 
     def verify_exacthatalgebra(self,tauhat):
         """
@@ -432,8 +431,8 @@ class ModelSingleIndustry:
 
         # I think we need to know w
         w = self.w
-        L = self.Xm / w
-
+        self.L = self.Xm / w
+        
         # Start backing up price (with some normalization)
         p = np.ones((N,N,N))
         X_model = np.zeros((N,N,N))
@@ -461,20 +460,25 @@ class ModelSingleIndustry:
         for DE in range(N):
             p[:,:,DE] = p[:,:,DE] / p[DE,DE,DE] * w[DE]
 
-        # Calculate tau, a and g
+        # Calculate tau
         tau = np.zeros((N,N,N))
-        a   = np.zeros((N,N,N))
-        g   = np.zeros((N,N,N))
         for HQ,PR,DE in np.ndindex((N,N,N)):
             tau[HQ,PR,DE] = p[HQ,PR,DE] / w[PR]
-            a[HQ,PR,DE] = self.Z[HQ,PR,DE] * p[HQ,PR,DE] / self.X[HQ,PR,DE]
-            g[HQ,PR,DE] = self.E[HQ,PR,DE] * p[HQ,PR,DE] / self.X[HQ,PR,DE]
+        self.tau = tau
+        
+        # Calculate a and g (if emission is observed)
+        if self.Z is None:
+            print("Full emission allocation not observed. Cannot calculate a")
+        else:
+            print("Calculate a and g")
+            a   = np.zeros((N,N,N))
+            g   = np.zeros((N,N,N))
+            for HQ,PR,DE in np.ndindex((N,N,N)):
+                a[HQ,PR,DE] = self.Z[HQ,PR,DE] * p[HQ,PR,DE] / self.X[HQ,PR,DE]
+                g[HQ,PR,DE] = self.E[HQ,PR,DE] * p[HQ,PR,DE] / self.X[HQ,PR,DE]
+            self.a   = a # Emission intensity
+            self.g   = g # Trade emission intensity
 
-        # Deep parameters
-        self.tau = tau # Technology parameter
-        self.L   = L # Labor endowment
-        self.a   = a # Emission intensity
-        self.g   = g # Trade emission intensity
 
     def calcpi(self,p):
         """ 
@@ -574,18 +578,13 @@ if __name__ == '__main__' :
     """
     T0,M0,Zl0 = np.sum(X,axis=0),np.sum(X,axis=2),np.sum(Z,axis=(0,2))
     w0    = np.ones((N))
-    model_triangulation = ModelSingleIndustry(N=N,theta=4.5,rho=0.55,T=T0,M=M0,w=w0,Zl=Zl0,E=E0)
-    model_triangulation.fill_allocation("PFDI")
-    print(model_triangulation.assumption)
-    model_triangulation.fill_allocation("HFDI")
-    print(model_triangulation.assumption)
-    model_triangulation.fill_allocation("VFDI")
-    print(model_triangulation.assumption)
-    model_triangulation.fill_allocation("RRC")
-    print(model_triangulation.assumption)
-    model_triangulation.fill_emission("common_production_location")
-    model_triangulation.fill_emission("common_headquarter_location")
-
+    model_tri = ModelSingleIndustry(N=N,theta=4.5,rho=0.55,T=T0,M=M0,w=w0,Zl=Zl0,E=E0)
+    # Compare various models and show that they can fill in perfectly
+    for assumptions in ["PFDI","HFDI","VFDI","RRC"]:
+        for assumptions_emission in ["common_production_location","common_headquarters_location"]:
+            model_tri = ModelSingleIndustry(N=N,theta=4.5,rho=0.55,T=T0,M=M0,w=w0,Zl=Zl0,E=E0)
+            model_tri.fill_allocation(assumptions)
+            model_tri.fill_emission(assumptions_emission)
 
 
 

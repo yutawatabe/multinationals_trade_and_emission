@@ -33,18 +33,19 @@ var gamma {BILAT} >= 0, <=10;
 var a     {TRILAT} >= 0;
 
 # Describe variables from an equilibrium outcome
-# CAUTION: Here p is p^(-theta) (this is convenient to solve)
+# CAUTION: Here p_temp is p^(-theta) (this is convenient to solve)
 # so we need to renormalize it by powering it with (-1/theta)
 # This appears in the definition of Z
-var p {(HQ,PR,DE) in TRILAT} = gamma[HQ,PR] * xi[PR,DE] / w[DE]; 
+var p_temp {(HQ,PR,DE) in TRILAT} = gamma[HQ,PR] * xi[PR,DE] / w[DE]; 
 var P {(HQ,DE) in BILAT} = 
     (
-     sum {K in COU} p[HQ,K,DE]^(1/(1-rho))
+     sum {K in COU} p_temp[HQ,K,DE]^(1/(1-rho))
     )^((1-rho));
 var X {(HQ,PR,DE) in TRILAT} = Xm[DE]
-    * (p[HQ,PR,DE] / P[HQ,DE])^(1/(1-rho))
+    * (p_temp[HQ,PR,DE] / P[HQ,DE])^(1/(1-rho))
     * P[HQ,DE] / (sum {J in COU} P[J,DE]);
-var Z {(HQ,PR,DE) in TRILAT} = a[HQ,PR,DE] * X[HQ,PR,DE] * p[HQ,PR,DE]^(1/theta);
+var Z {(HQ,PR,DE) in TRILAT} = a[HQ,PR,DE] * X[HQ,PR,DE] * p_temp[HQ,PR,DE]^(1/theta);
+var p {(HQ,PR,DE) in TRILAT} = p_temp[HQ,PR,DE]^(-1/theta);
 
 # Define expenditure share
 var pi {(HQ,PR,DE) in TRILAT}
@@ -84,9 +85,7 @@ subject to X_bound {(HQ,PR,DE) in TRILAT}:
 #subject to w_nomralization:
 #	sum {PR in COU} what[PR] = 5;
 subject to xi_normalization {DE in COU}:
-	xi[DE,DE] = 1;
-subject to gamma_normalization {PR in COU}:
-    gamma[PR,PR] = 1;
+	p[DE,DE,DE] = w[DE];
 
 # Data constraints
 subject to MSummation {(HQ,PR) in BILAT}:
